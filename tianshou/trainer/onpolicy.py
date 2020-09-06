@@ -1,17 +1,35 @@
 import time
 import tqdm
+from torch.utils.tensorboard import SummaryWriter
+from typing import Dict, List, Union, Callable, Optional
 
+from tianshou.data import Collector
+from tianshou.policy import BasePolicy
 from tianshou.utils import tqdm_config, MovAvg
 from tianshou.trainer import test_episode, gather_info
 
 
-def onpolicy_trainer(policy, train_collector, test_collector, max_epoch,
-                     step_per_epoch, collect_per_step, repeat_per_collect,
-                     episode_per_test, batch_size,
-                     train_fn=None, test_fn=None, stop_fn=None, save_fn=None,
-                     log_fn=None, writer=None, log_interval=1, verbose=True,
-                     task='', **kwargs):
-    """A wrapper for on-policy trainer procedure.
+def onpolicy_trainer(
+        policy: BasePolicy,
+        train_collector: Collector,
+        test_collector: Collector,
+        max_epoch: int,
+        step_per_epoch: int,
+        collect_per_step: int,
+        repeat_per_collect: int,
+        episode_per_test: Union[int, List[int]],
+        batch_size: int,
+        train_fn: Optional[Callable[[int], None]] = None,
+        test_fn: Optional[Callable[[int], None]] = None,
+        stop_fn: Optional[Callable[[float], bool]] = None,
+        save_fn: Optional[Callable[[BasePolicy], None]] = None,
+        writer: Optional[SummaryWriter] = None,
+        log_interval: int = 1,
+        verbose: bool = True,
+        test_in_train: bool = True,
+) -> Dict[str, Union[float, str]]:
+    """A wrapper for on-policy trainer procedure. The ``step`` in trainer means
+    a policy network update.
 
     :param policy: an instance of the :class:`~tianshou.policy.BasePolicy`
         class.
@@ -23,9 +41,9 @@ def onpolicy_trainer(policy, train_collector, test_collector, max_epoch,
         process might be finished before reaching the ``max_epoch``.
     :param int step_per_epoch: the number of step for updating policy network
         in one epoch.
-    :param int collect_per_step: the number of frames the collector would
-        collect before the network update. In other words, collect some frames
-        and do one policy network update.
+    :param int collect_per_step: the number of episodes the collector would
+        collect before the network update. In other words, collect some
+        episodes and do one policy network update.
     :param int repeat_per_collect: the number of repeat time for policy
         learning, for example, set it to 2 means the policy needs to learn each
         given batch data twice.
@@ -44,19 +62,19 @@ def onpolicy_trainer(policy, train_collector, test_collector, max_epoch,
     :param function stop_fn: a function receives the average undiscounted
         returns of the testing result, return a boolean which indicates whether
         reaching the goal.
-    :param function log_fn: a function receives env info for logging.
     :param torch.utils.tensorboard.SummaryWriter writer: a TensorBoard
         SummaryWriter.
     :param int log_interval: the log interval of the writer.
     :param bool verbose: whether to print the information.
+    :param bool test_in_train: whether to test in the training phase.
 
     :return: See :func:`~tianshou.trainer.gather_info`.
     """
     global_step = 0
-    best_epoch, best_reward = -1, -1
+    best_epoch, best_reward = -1, -1.
     stat = {}
     start_time = time.time()
-    test_in_train = train_collector.policy == policy
+    test_in_train = test_in_train and train_collector.policy == policy
     for epoch in range(1, 1 + max_epoch):
         # train
         policy.train()
@@ -65,13 +83,12 @@ def onpolicy_trainer(policy, train_collector, test_collector, max_epoch,
         with tqdm.tqdm(total=step_per_epoch, desc=f'Epoch #{epoch}',
                        **tqdm_config) as t:
             while t.n < t.total:
-                result = train_collector.collect(n_episode=collect_per_step,
-                                                 log_fn=log_fn)
+                result = train_collector.collect(n_episode=collect_per_step)
                 data = {}
                 if test_in_train and stop_fn and stop_fn(result['rew']):
                     test_result = test_episode(
                         policy, test_collector, test_fn,
-                        epoch, episode_per_test)
+                        epoch, episode_per_test, writer, global_step)
                     if stop_fn and stop_fn(test_result['rew']):
                         if save_fn:
                             save_fn(policy)
@@ -85,20 +102,19 @@ def onpolicy_trainer(policy, train_collector, test_collector, max_epoch,
                         policy.train()
                         if train_fn:
                             train_fn(epoch)
-                losses = policy.learn(
-                    train_collector.sample(0), batch_size, repeat_per_collect)
+                losses = policy.update(
+                    0, train_collector.buffer, batch_size, repeat_per_collect)
                 train_collector.reset_buffer()
                 step = 1
                 for k in losses.keys():
                     if isinstance(losses[k], list):
                         step = max(step, len(losses[k]))
-                global_step += step
+                global_step += step * collect_per_step
                 for k in result.keys():
                     data[k] = f'{result[k]:.2f}'
                     if writer and global_step % log_interval == 0:
                         writer.add_scalar(
-                            k + '_' + task if task else k,
-                            result[k], global_step=global_step)
+                            'train/' + k, result[k], global_step=global_step)
                 for k in losses.keys():
                     if stat.get(k) is None:
                         stat[k] = MovAvg()
@@ -106,15 +122,14 @@ def onpolicy_trainer(policy, train_collector, test_collector, max_epoch,
                     data[k] = f'{stat[k].get():.6f}'
                     if writer and global_step % log_interval == 0:
                         writer.add_scalar(
-                            k + '_' + task if task else k,
-                            stat[k].get(), global_step=global_step)
+                            k, stat[k].get(), global_step=global_step)
                 t.update(step)
                 t.set_postfix(**data)
             if t.n <= t.total:
                 t.update()
         # test
-        result = test_episode(
-            policy, test_collector, test_fn, epoch, episode_per_test)
+        result = test_episode(policy, test_collector, test_fn, epoch,
+                              episode_per_test, writer, global_step)
         if best_epoch == -1 or best_reward < result['rew']:
             best_reward = result['rew']
             best_epoch = epoch

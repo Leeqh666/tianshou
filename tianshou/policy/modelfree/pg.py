@@ -1,8 +1,9 @@
 import torch
 import numpy as np
+from typing import Dict, List, Union, Optional
 
-from tianshou.data import Batch
 from tianshou.policy import BasePolicy
+from tianshou.data import Batch, ReplayBuffer, to_torch_as
 
 
 class PGPolicy(BasePolicy):
@@ -20,17 +21,23 @@ class PGPolicy(BasePolicy):
         explanation.
     """
 
-    def __init__(self, model, optim, dist_fn=torch.distributions.Categorical,
-                 discount_factor=0.99, **kwargs):
+    def __init__(self,
+                 model: torch.nn.Module,
+                 optim: torch.optim.Optimizer,
+                 dist_fn: torch.distributions.Distribution,
+                 discount_factor: float = 0.99,
+                 reward_normalization: bool = False,
+                 **kwargs) -> None:
         super().__init__(**kwargs)
         self.model = model
         self.optim = optim
         self.dist_fn = dist_fn
-        self._eps = np.finfo(np.float32).eps.item()
         assert 0 <= discount_factor <= 1, 'discount factor should in [0, 1]'
         self._gamma = discount_factor
+        self._rew_norm = reward_normalization
 
-    def process_fn(self, batch, buffer, indice):
+    def process_fn(self, batch: Batch, buffer: ReplayBuffer,
+                   indice: np.ndarray) -> Batch:
         r"""Compute the discounted returns for each frame:
 
         .. math::
@@ -43,9 +50,11 @@ class PGPolicy(BasePolicy):
         # batch.returns = self._vectorized_returns(batch)
         # return batch
         return self.compute_episodic_return(
-            batch, gamma=self._gamma, gae_lambda=1.)
+            batch, gamma=self._gamma, gae_lambda=1., rew_norm=self._rew_norm)
 
-    def forward(self, batch, state=None, **kwargs):
+    def forward(self, batch: Batch,
+                state: Optional[Union[dict, Batch, np.ndarray]] = None,
+                **kwargs) -> Batch:
         """Compute action over the given batch data.
 
         :return: A :class:`~tianshou.data.Batch` which has 4 keys:
@@ -68,17 +77,18 @@ class PGPolicy(BasePolicy):
         act = dist.sample()
         return Batch(logits=logits, act=act, state=h, dist=dist)
 
-    def learn(self, batch, batch_size=None, repeat=1, **kwargs):
+    def learn(self, batch: Batch, batch_size: int, repeat: int,
+              **kwargs) -> Dict[str, List[float]]:
         losses = []
-        r = batch.returns
-        batch.returns = (r - r.mean()) / (r.std() + self._eps)
         for _ in range(repeat):
-            for b in batch.split(batch_size):
+            for b in batch.split(batch_size, merge_last=True):
                 self.optim.zero_grad()
                 dist = self(b).dist
-                a = torch.tensor(b.act, device=dist.logits.device)
-                r = torch.tensor(b.returns, device=dist.logits.device)
-                loss = -(dist.log_prob(a) * r).sum()
+                a = to_torch_as(b.act, dist.logits)
+                r = to_torch_as(b.returns, dist.logits)
+                log_prob = dist.log_prob(a).reshape(
+                    r.shape[0], -1).transpose(0, 1)
+                loss = -(log_prob * r).mean()
                 loss.backward()
                 self.optim.step()
                 losses.append(loss.item())

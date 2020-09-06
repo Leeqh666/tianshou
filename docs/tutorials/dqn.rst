@@ -8,7 +8,6 @@ The full script is at `test/discrete/test_dqn.py <https://github.com/thu-ml/tian
 
 Contrary to existing Deep RL libraries such as `RLlib <https://github.com/ray-project/ray/tree/master/rllib/>`_, which could only accept a config specification of hyperparameters, network, and others, Tianshou provides an easy way of construction through the code-level.
 
-
 Make an Environment
 -------------------
 
@@ -22,7 +21,6 @@ First of all, you have to make an environment for your agent to interact with. F
 
 CartPole-v0 is a simple environment with a discrete action space, for which DQN applies. You have to identify whether the action space is continuous or discrete and apply eligible algorithms. DDPG :cite:`DDPG`, for example, could only be applied to continuous action spaces, while almost all other policy gradient methods could be applied to both, depending on the probability distribution on the action.
 
-
 Setup Multi-environment Wrapper
 -------------------------------
 
@@ -32,16 +30,28 @@ It is available if you want the original ``gym.Env``:
     train_envs = gym.make('CartPole-v0')
     test_envs = gym.make('CartPole-v0')
 
-Tianshou supports parallel sampling for all algorithms. It provides three types of vectorized environment wrapper: :class:`~tianshou.env.VectorEnv`, :class:`~tianshou.env.SubprocVectorEnv`, and :class:`~tianshou.env.RayVectorEnv`. It can be used as follows: 
+Tianshou supports parallel sampling for all algorithms. It provides four types of vectorized environment wrapper: :class:`~tianshou.env.DummyVectorEnv`, :class:`~tianshou.env.SubprocVectorEnv`, :class:`~tianshou.env.ShmemVectorEnv`, and :class:`~tianshou.env.RayVectorEnv`. It can be used as follows: (more explanation can be found at :ref:`parallel_sampling`)
 ::
 
-    train_envs = ts.env.VectorEnv([lambda: gym.make('CartPole-v0') for _ in range(8)])
-    test_envs = ts.env.VectorEnv([lambda: gym.make('CartPole-v0') for _ in range(100)])
+    train_envs = ts.env.DummyVectorEnv([lambda: gym.make('CartPole-v0') for _ in range(8)])
+    test_envs = ts.env.DummyVectorEnv([lambda: gym.make('CartPole-v0') for _ in range(100)])
 
 Here, we set up 8 environments in ``train_envs`` and 100 environments in ``test_envs``.
 
 For the demonstration, here we use the second block of codes.
 
+.. warning::
+
+    If you use your own environment, please make sure the ``seed`` method is set up properly, e.g.,
+
+    ::
+
+        def seed(self, seed):
+            np.random.seed(seed)
+
+    Otherwise, the outputs of these envs may be the same with each other.
+
+.. _build_the_network:
 
 Build the Network
 -----------------
@@ -73,11 +83,10 @@ Tianshou supports any user-defined PyTorch networks and optimizers but with the 
     net = Net(state_shape, action_shape)
     optim = torch.optim.Adam(net.parameters(), lr=1e-3)
 
-The rules of self-defined networks are:
+You can also have a try with those pre-defined networks in :mod:`~tianshou.utils.net.common`, :mod:`~tianshou.utils.net.discrete`, and :mod:`~tianshou.utils.net.continuous`. The rules of self-defined networks are:
 
-1. Input: observation ``obs`` (may be a ``numpy.ndarray`` or ``torch.Tensor``), hidden state ``state`` (for RNN usage), and other information ``info`` provided by the environment.
-2. Output: some ``logits`` and the next hidden state ``state``. The logits could be a tuple instead of a ``torch.Tensor``. It depends on how the policy process the network output. For example, in PPO :cite:`PPO`, the return of the network might be ``(mu, sigma), state`` for Gaussian policy.
-
+1. Input: observation ``obs`` (may be a ``numpy.ndarray``, ``torch.Tensor``, dict, or self-defined class), hidden state ``state`` (for RNN usage), and other information ``info`` provided by the environment.
+2. Output: some ``logits``, the next hidden state ``state``, and intermediate result during the policy forwarding procedure ``policy``. The logits could be a tuple instead of a ``torch.Tensor``. It depends on how the policy process the network output. For example, in PPO :cite:`PPO`, the return of the network might be ``(mu, sigma), state`` for Gaussian policy. The ``policy`` can be a Batch of torch.Tensor or other things, which will be stored in the replay buffer, and can be accessed in the policy update process (e.g. in ``policy.learn()``, the ``batch.policy`` is what you need).
 
 Setup Policy
 ------------
@@ -85,10 +94,7 @@ Setup Policy
 We use the defined ``net`` and ``optim``, with extra policy hyper-parameters, to define a policy. Here we define a DQN policy with using a target network: 
 ::
 
-    policy = ts.policy.DQNPolicy(net, optim,
-        discount_factor=0.9, estimation_step=3,
-        use_target_network=True, target_update_freq=320)
-
+    policy = ts.policy.DQNPolicy(net, optim, discount_factor=0.9, estimation_step=3, target_update_freq=320)
 
 Setup Collector
 ---------------
@@ -99,7 +105,6 @@ In each step, the collector will let the policy perform (at least) a specified n
 
     train_collector = ts.data.Collector(policy, train_envs, ts.data.ReplayBuffer(size=20000))
     test_collector = ts.data.Collector(policy, test_envs)
-
 
 Train Policy with a Trainer
 ---------------------------
@@ -117,7 +122,7 @@ Tianshou provides :class:`~tianshou.trainer.onpolicy_trainer` and :class:`~tians
         writer=None)
     print(f'Finished training! Use {result["duration"]}')
 
-The meaning of each parameter is as follows:
+The meaning of each parameter is as follows (full description can be found at :meth:`~tianshou.trainer.offpolicy_trainer`):
 
 * ``max_epoch``: The maximum of epochs for training. The training process might be finished before reaching the ``max_epoch``;
 * ``step_per_epoch``: The number of step for updating policy network in one epoch;
@@ -156,7 +161,6 @@ The returned result is a dictionary as follows:
 
 It shows that within approximately 4 seconds, we finished training a DQN agent on CartPole. The mean returns over 100 consecutive episodes is 199.03.
 
-
 Save/Load Policy
 ----------------
 
@@ -166,17 +170,16 @@ Since the policy inherits the ``torch.nn.Module`` class, saving and loading the 
     torch.save(policy.state_dict(), 'dqn.pth')
     policy.load_state_dict(torch.load('dqn.pth'))
 
-
 Watch the Agent's Performance
 -----------------------------
 
 :class:`~tianshou.data.Collector` supports rendering. Here is the example of watching the agent's performance in 35 FPS:
 ::
 
+    policy.eval()
+    policy.set_eps(0.05)
     collector = ts.data.Collector(policy, env)
     collector.collect(n_episode=1, render=1 / 35)
-    collector.close()
-
 
 .. _customized_trainer:
 
@@ -185,10 +188,10 @@ Train a Policy with Customized Codes
 
 "I don't want to use your provided trainer. I want to customize it!"
 
-No problem! Tianshou supports user-defined training code. Here is the usage:
+Tianshou supports user-defined training code. Here is the code snippet:
 ::
 
-    # pre-collect 5000 frames with random action before training
+    # pre-collect at least 5000 frames with random action before training
     policy.set_eps(1)
     train_collector.collect(n_step=5000)
 
@@ -208,10 +211,10 @@ No problem! Tianshou supports user-defined training code. Here is the usage:
                 # back to training eps
                 policy.set_eps(0.1)
 
-        # train policy with a sampled batch data
-        losses = policy.learn(train_collector.sample(batch_size=64))
+        # train policy with a sampled batch data from buffer
+        losses = policy.update(64, train_collector.buffer)
 
-For further usage, you can refer to :doc:`/tutorials/cheatsheet`.
+For further usage, you can refer to the :doc:`/tutorials/cheatsheet`.
 
 .. rubric:: References
 

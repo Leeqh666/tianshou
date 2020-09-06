@@ -3,18 +3,10 @@
 
 from setuptools import setup, find_packages
 
-import re
-from os import path
-
-here = path.abspath(path.dirname(__file__))
-
-# Get the version string
-with open(path.join(here, 'tianshou', '__init__.py')) as f:
-    version = re.search(r'__version__ = \'(.*?)\'', f.read()).group(1)
 
 setup(
     name='tianshou',
-    version=version,
+    version='0.2.6',
     description='A Library for Deep Reinforcement Learning',
     long_description=open('README.md', encoding='utf8').read(),
     long_description_content_type='text/markdown',
@@ -46,12 +38,12 @@ setup(
                                     'examples', 'examples.*',
                                     'docs', 'docs.*']),
     install_requires=[
-        'gym>=0.15.0',
+        'gym>=0.15.4',
         'tqdm',
         'numpy',
-        'cloudpickle',
         'tensorboard',
         'torch>=1.4.0',
+        'numba>=0.51.0',
     ],
     extras_require={
         'dev': [
@@ -61,6 +53,7 @@ setup(
             'flake8',
             'pytest',
             'pytest-cov',
+            'ray>=0.8.0',
         ],
         'atari': [
             'atari_py',
