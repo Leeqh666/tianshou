@@ -71,8 +71,12 @@ def test_dqn(args=get_args()):
     train_envs.seed(args.seed)
     test_envs.seed(args.seed)
     # define model
-    net = DQN(*args.state_shape,
-              args.action_shape, args.device).to(args.device)
+    # print(args.state_shape)
+    # print(args.action_shape)
+    print(args.device)
+    c, h, w = args.state_shape
+    net = DQN(c, h, w, args.action_shape, args.device).to(device=args.device)
+
     optim = torch.optim.Adam(net.parameters(), lr=args.lr)
     # define policy
     policy = DQNPolicy(net, optim, args.gamma, args.n_step,
@@ -84,7 +88,7 @@ def test_dqn(args=get_args()):
     # replay buffer: `save_last_obs` and `stack_num` can be removed together
     # when you have enough RAM
     buffer = ReplayBuffer(args.buffer_size, ignore_obs_next=True,
-                          save_last_obs=True, stack_num=args.frames_stack)
+                          save_only_last_obs=True, stack_num=args.frames_stack)
     # collector
     train_collector = Collector(policy, train_envs, buffer)
     test_collector = Collector(policy, test_envs)
@@ -94,7 +98,7 @@ def test_dqn(args=get_args()):
 
     def save_fn(policy):
         torch.save(policy.state_dict(), os.path.join(log_path, 'policy.pth'))
-
+    
     def stop_fn(x):
         if env.env.spec.reward_threshold:
             return x >= env.spec.reward_threshold

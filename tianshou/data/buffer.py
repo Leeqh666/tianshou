@@ -295,8 +295,10 @@ class ReplayBuffer:
                     if not (isinstance(val, Batch) and val.is_empty()):
                         raise e  # val != Batch()
                     return Batch()
+        #计算实际数量
         indice = self._indices[:self._size][indice]
         done = self._meta.__dict__['done']
+        #如果查询obs_next但是并未保存就视情况+1从obs中返回
         if key == 'obs_next' and not self._save_s_:
             indice += 1 - done[indice].astype(np.int)
             indice[indice == self._size] = 0
@@ -308,10 +310,14 @@ class ReplayBuffer:
             stack = []
             for _ in range(stack_num):
                 stack = [val[indice]] + stack
+                #切片前移
                 pre_indice = np.asarray(indice - 1)
+                #如果前移到下标为-1越界则回到最后
                 pre_indice[pre_indice == -1] = self._size - 1
+                #如果前移之后到达终止状态则回退前移步骤
                 indice = np.asarray(
                     pre_indice + done[pre_indice].astype(np.int))
+                #如果越界则再回到开头
                 indice[indice == self._size] = 0
             if isinstance(val, Batch):
                 stack = Batch.stack(stack, axis=indice.ndim)
