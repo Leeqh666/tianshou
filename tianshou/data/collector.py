@@ -95,13 +95,16 @@ class Collector(object):
         self._ready_env_ids = np.arange(self.env_num)
         # self.async is a flag to indicate whether this collector works
         # with asynchronous simulation
+        # 标记这个collector是否以异步方式进行
         self.is_async = env.is_async
         # need cache buffers before storing in the main buffer
+        # 存储进主buffer之前需要缓存，每个环境对应一个缓存
         self._cached_buf = [ListReplayBuffer() for _ in range(self.env_num)]
         self.buffer = buffer
         self.policy = policy
         self.preprocess_fn = preprocess_fn
-        self.process_fn = policy.process_fn
+        if policy is not None:
+            self.process_fn = policy.process_fn
         self._action_space = env.action_space
         self._action_noise = action_noise
         self._rew_metric = reward_metric or Collector._default_rew_metric
@@ -144,6 +147,9 @@ class Collector(object):
         """
         self._ready_env_ids = np.arange(self.env_num)
         obs = self.env.reset()
+        # 提前使用preprocess_fn对状态表示进行处理
+        # preproces_fn返回一个Batch
+        # 在reset函数中，只对obs进行处理
         if self.preprocess_fn:
             obs = self.preprocess_fn(obs=obs).get('obs', obs)
         self.data.obs = obs
@@ -210,16 +216,20 @@ class Collector(object):
         start_time = time.time()
         step_count = 0
         # episode of each environment
+        # 每一个环境进行的episode次数
         episode_count = np.zeros(self.env_num)
         # If n_episode is a list, and some envs have collected the required
         # number of episodes, these envs will be recorded in this list, and
         # they will not be stepped.
+        # 如果有的环境中已经达到了迭代的轮次，那么它们将不再被运行。
         finished_env_ids = []
         reward_total = 0.0
         whole_data = Batch()
         list_n_episode = False
+        # 多环境不同episode初始化处理
         if n_episode is not None and not np.isscalar(n_episode):
             assert len(n_episode) == self.get_env_num()
+            # 标记为多环境运行不同episode
             list_n_episode = True
             finished_env_ids = [
                 i for i in self._ready_env_ids if n_episode[i] <= 0]
@@ -231,7 +241,8 @@ class Collector(object):
                     'There are already many steps in an episode. '
                     'You should add a time limitation to your environment!',
                     Warning)
-
+            
+            # 如果本身设计的就是异步运行，或者一些环境运行已结束，则启动异步收集
             is_async = self.is_async or len(finished_env_ids) > 0
             if is_async:
                 # self.data are the data for all environments in async
@@ -250,6 +261,7 @@ class Collector(object):
             self.data.update(state=Batch(), obs_next=Batch(), policy=Batch())
 
             # calculate the next action
+            # print(type(self.data.obs))
             if random:
                 spaces = self._action_space
                 result = Batch(
@@ -260,9 +272,10 @@ class Collector(object):
                         result = self.policy(self.data, last_state)
                 else:
                     result = self.policy(self.data, last_state)
-
+            # 在RNN的RL方法中使用state
             state = result.get('state', Batch())
             # convert None to Batch(), since None is reserved for 0-init
+            # 这行代码可以删除？？？
             if state is None:
                 state = Batch()
             self.data.update(state=state, policy=result.get('policy', Batch()))
@@ -279,11 +292,15 @@ class Collector(object):
                 obs_next, rew, done, info = self.env.step(self.data.act)
             else:
                 # store computed actions, states, etc
+                # 把self.data中得到的新的值赋给whole_data
                 _batch_set_item(whole_data, self._ready_env_ids,
                                 self.data, self.env_num)
+                # print(self._ready_env_ids, 1)
                 # fetch finished data
                 obs_next, rew, done, info = self.env.step(
                     self.data.act, id=self._ready_env_ids)
+                # print(self._ready_env_ids, 2)
+                # 这行代码可以删除？？？
                 self._ready_env_ids = np.array([i['env_id'] for i in info])
                 # get the stepped data
                 self.data = whole_data[self._ready_env_ids]
@@ -294,11 +311,13 @@ class Collector(object):
                 self.render()
                 time.sleep(render)
 
-            # add data into the buffer
+            # 在加入buffer之前对数据进行预处理
             if self.preprocess_fn:
                 result = self.preprocess_fn(**self.data)
                 self.data.update(result)
-
+            
+            # add data into the buffer
+            # 首先将这一step的数据存储到对应的_cached_buf中，如果当前这一step对应了一个done状态，那么则清空对应的_cached_buf将其加入到buffer中
             for j, i in enumerate(self._ready_env_ids):
                 # j is the index in current ready_env_ids
                 # i is the index in all environments
@@ -323,8 +342,11 @@ class Collector(object):
                             finished_env_ids.append(i)
                     self._cached_buf[i].reset()
                     self._reset_state(j)
+            # 更新当前状态
             obs_next = self.data.obs_next
+            # 如果有已完结状态，则将对应的环境reset()
             if sum(done):
+                #np.where返回一个元组，维度与输入相同
                 env_ind_local = np.where(done)[0]
                 env_ind_global = self._ready_env_ids[env_ind_local]
                 obs_reset = self.env.reset(env_ind_global)
@@ -392,7 +414,8 @@ class Collector(object):
             'upon version 0.3. Use policy.update instead!', Warning)
         assert self.buffer is not None, "Cannot get sample from empty buffer!"
         batch_data, indice = self.buffer.sample(batch_size)
-        batch_data = self.process_fn(batch_data, self.buffer, indice)
+        if self.policy is not None:
+            batch_data = self.process_fn(batch_data, self.buffer, indice)
         return batch_data
 
     def close(self) -> None:

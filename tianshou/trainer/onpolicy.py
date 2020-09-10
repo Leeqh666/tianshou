@@ -128,6 +128,7 @@ def onpolicy_trainer(
                 t.set_postfix(**data)
             if t.n <= t.total:
                 t.update()
+        t.close()
         # test
         result = test_episode(policy, test_collector, test_fn, epoch,
                               episode_per_test, writer, global_step)

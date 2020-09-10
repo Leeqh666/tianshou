@@ -81,4 +81,5 @@ class DQN(nn.Module):
         r"""x -> Q(x, \*)"""
         if not isinstance(x, torch.Tensor):
             x = torch.tensor(x, device=self.device, dtype=torch.float32)
+        # print(type(x))
         return self.net(x), state

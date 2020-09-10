@@ -132,6 +132,9 @@ class DQNPolicy(BasePolicy):
         model = getattr(self, model)
         obs = getattr(batch, input)
         obs_ = obs.obs if hasattr(obs, 'obs') else obs
+        # print(type(obs_))
+        # print(model)
+
         q, h = model(obs_, state=state, info=batch.info)
         act = to_numpy(q.max(dim=1)[1])
         has_mask = hasattr(obs, 'mask')

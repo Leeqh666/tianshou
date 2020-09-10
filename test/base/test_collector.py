@@ -1,3 +1,5 @@
+import sys
+sys.path.append('/home/leeqh/tianshou')
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
@@ -257,8 +259,8 @@ def test_collector_with_ma():
 
 
 if __name__ == '__main__':
-    test_collector()
-    test_collector_with_dict_state()
-    test_collector_with_ma()
+    # test_collector()
+    # test_collector_with_dict_state()
+    # test_collector_with_ma()
     test_collector_with_async()
-    test_collector_with_exact_episodes()
+    # test_collector_with_exact_episodes()

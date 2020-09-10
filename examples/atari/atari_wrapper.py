@@ -54,6 +54,7 @@ class MaxAndSkipEnv(gym.Wrapper):
             total_reward += reward
             if done:
                 break
+        # 210 × 160 × 3
         max_frame = np.max(obs_list[-2:], axis=0)
         return max_frame, total_reward, done, info
 

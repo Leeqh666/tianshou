@@ -1,3 +1,5 @@
+import sys
+sys.path.append('/home/leeqh/tianshou')
 import os
 import torch
 import pprint
@@ -12,6 +14,8 @@ from tianshou.trainer import offpolicy_trainer
 from tianshou.data import Collector, ReplayBuffer
 
 from atari_wrapper import wrap_deepmind
+import embedding_prediction
+import tqdm
 
 
 def get_args():
@@ -30,8 +34,8 @@ def get_args():
     parser.add_argument('--step_per_epoch', type=int, default=10000)
     parser.add_argument('--collect_per_step', type=int, default=10)
     parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--training_num', type=int, default=16)
-    parser.add_argument('--test_num', type=int, default=10)
+    parser.add_argument('--training_num', type=int, default=1)
+    parser.add_argument('--test_num', type=int, default=1)
     parser.add_argument('--logdir', type=str, default='log')
     parser.add_argument('--render', type=float, default=0.)
     parser.add_argument(
@@ -57,7 +61,9 @@ def test_dqn(args=get_args()):
     env = make_atari_env(args)
     args.state_shape = env.observation_space.shape or env.observation_space.n
     args.action_shape = env.env.action_space.shape or env.env.action_space.n
+    
     # should be N_FRAMES x H x W
+    
     print("Observations shape: ", args.state_shape)
     print("Actions shape: ", args.action_shape)
     # make environments
@@ -73,9 +79,9 @@ def test_dqn(args=get_args()):
     # define model
     # print(args.state_shape)
     # print(args.action_shape)
-    print(args.device)
-    c, h, w = args.state_shape
-    net = DQN(c, h, w, args.action_shape, args.device).to(device=args.device)
+    # print(args.device)
+    # c, h, w = args.state_shape
+    net = DQN(*args.state_shape, args.action_shape, args.device).to(device=args.device)
 
     optim = torch.optim.Adam(net.parameters(), lr=args.lr)
     # define policy
@@ -85,16 +91,89 @@ def test_dqn(args=get_args()):
     if args.resume_path:
         policy.load_state_dict(torch.load(args.resume_path))
         print("Loaded agent from: ", args.resume_path)
-    # replay buffer: `save_last_obs` and `stack_num` can be removed together
-    # when you have enough RAM
-    buffer = ReplayBuffer(args.buffer_size, ignore_obs_next=True,
-                          save_only_last_obs=True, stack_num=args.frames_stack)
-    # collector
-    train_collector = Collector(policy, train_envs, buffer)
-    test_collector = Collector(policy, test_envs)
+    
+    embedding_net = embedding_prediction.Prediction(*args.state_shape, args.action_shape, args.device).to(device=args.device)
+    
+    # numel_list = [p.numel() for p in embedding_net.parameters()]
+    # print(sum(numel_list), numel_list)
+         
+    pre_buffer = ReplayBuffer(args.buffer_size, save_only_last_obs=True, stack_num=args.frames_stack)
+    pre_test_buffer = ReplayBuffer(args.buffer_size // 100, save_only_last_obs=True, stack_num=args.frames_stack)
+    
+    print('collect start')
+    train_collector = Collector(None, train_envs, pre_buffer)
+    test_collector = Collector(None, test_envs, pre_test_buffer)
+    train_collector.collect(n_step=args.buffer_size,random=True)
+    test_collector.collect(n_step=args.buffer_size // 100, random=True)
+    print('collect finish')
+
+    print(len(train_collector.buffer))
+    print(len(test_collector.buffer))
+
+    #使用得到的数据训练编码网络
+    # def part_loss(x, device='cpu'):
+    #     if not isinstance(x, torch.Tensor):
+    #         x = torch.tensor(x, device=device, dtype=torch.float32)
+    #     return torch.sum(torch.min(torch.cat(((1-x).pow(2.0),x.pow(2.0)),dim=0), dim=0)[0])
+    
+    pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-3)
+    scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=20000, gamma=0.1,last_epoch=-1)
+
+    loss_fn = torch.nn.NLLLoss()
+    for epoch in range(1, 100001):
+
+        batch_data = train_collector.sample(batch_size=64)
+        # print(batch_data)
+        pred = embedding_net(batch_data['obs'], batch_data['obs_next'])
+        # x1 = pred[1]
+        # x2 = pred[2]
+        # print(pred)
+        if not isinstance(batch_data['act'], torch.Tensor):
+            act = torch.tensor(batch_data['act'], device=args.device, dtype=torch.int64)
+        # print(pred[0].dtype)
+        # print(act.dtype)
+        # l2_norm = sum(p.pow(2.0).sum() for p in embedding_net.net.parameters())
+        # loss = loss_fn(pred[0], act) + (part_loss(x1) + part_loss(x2)) / 64 + l2_norm
+        loss = loss_fn(pred[0], act)
+        pre_optim.zero_grad()
+        loss.backward()
+        pre_optim.step()
+        scheduler.step()
+
+        if epoch % 10000 == 0 or epoch == 1:
+            print(pre_optim.state_dict()['param_groups'][0]['lr'])  
+            print("Epoch: %d, Loss: %f" % (epoch, float(loss)))
+            correct = 0
+            test_batch_data = test_collector.sample(batch_size=0)
+            with torch.no_grad():
+                test_pred = embedding_net(test_batch_data['obs'], test_batch_data['obs_next'])
+                if not isinstance(test_batch_data['act'], torch.Tensor):
+                    act = torch.tensor(test_batch_data['act'], device=args.device, dtype=torch.int64)
+                
+                # print(torch.argmax(test_pred[0],dim=1))
+                # print(act)
+                correct += int((torch.argmax(test_pred[0],dim=1) == act).sum())
+                print('Acc:',correct / len(test_batch_data))
+    
     # log
     log_path = os.path.join(args.logdir, args.task, 'dqn')
     writer = SummaryWriter(log_path)
+
+    torch.save(embedding_net.state_dict(), os.path.join(log_path, 'embedding.pth'))    
+    exit()
+    #构建hash表
+
+
+    # replay buffer: `save_last_obs` and `stack_num` can be removed together
+    # when you have enough RAM
+    pre_buffer.reset()
+    buffer = ReplayBuffer(args.buffer_size, ignore_obs_next=True,
+                          save_only_last_obs=True, stack_num=args.frames_stack)
+    # collector
+    # train_collector中传入preprocess_fn对奖励进行重构
+    train_collector = Collector(policy, train_envs, buffer)
+    test_collector = Collector(policy, test_envs)
+
 
     def save_fn(policy):
         torch.save(policy.state_dict(), os.path.join(log_path, 'policy.pth'))
@@ -127,12 +206,13 @@ def test_dqn(args=get_args()):
         test_envs.seed(args.seed)
         test_collector.reset()
         result = test_collector.collect(n_episode=[1] * args.test_num,
-                                        render=args.render)
+                                        render=1/30)
         pprint.pprint(result)
 
     if args.watch:
         watch()
         exit(0)
+
 
     # test train_collector and start filling replay buffer
     train_collector.collect(n_step=args.batch_size * 4)
