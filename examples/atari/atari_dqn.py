@@ -1,5 +1,6 @@
 import sys
 sys.path.append('/home/leeqh/tianshou')
+sys.path.append('../')
 import os
 import torch
 import pprint
@@ -14,8 +15,15 @@ from tianshou.trainer import offpolicy_trainer
 from tianshou.data import Collector, ReplayBuffer
 
 from atari_wrapper import wrap_deepmind
+
 import embedding_prediction
-import tqdm
+# import tqdm
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
+from my_utils.dataset import BatchDataSet
+import pickle
 
 
 def get_args():
@@ -43,6 +51,8 @@ def get_args():
         default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--frames_stack', type=int, default=4)
     parser.add_argument('--resume_path', type=str, default=None)
+    parser.add_argument('--embedding_path', type=bool, default=False)
+    parser.add_argument('--embedding_data_path', type=bool, default=False)
     parser.add_argument('--watch', default=False, action='store_true',
                         help='watch the play of pre-trained policy only')
     return parser.parse_args()
@@ -76,10 +86,114 @@ def test_dqn(args=get_args()):
     torch.manual_seed(args.seed)
     train_envs.seed(args.seed)
     test_envs.seed(args.seed)
+
+    # log
+    log_path = os.path.join(args.logdir, args.task, 'embedding')
+
+    embedding_net = embedding_prediction.Prediction(*args.state_shape, args.action_shape, args.device).to(device=args.device)
+    
+    if args.embedding_path:
+        embedding_net.load_state_dict(torch.load(log_path + '/embedding.pth'))
+        print("Loaded agent from: ", log_path + '/embedding.pth')
+    # numel_list = [p.numel() for p in embedding_net.parameters()]
+    # print(sum(numel_list), numel_list)
+         
+    pre_buffer = ReplayBuffer(args.buffer_size, save_only_last_obs=True, stack_num=args.frames_stack)
+    pre_test_buffer = ReplayBuffer(args.buffer_size // 100, save_only_last_obs=True, stack_num=args.frames_stack)
+    
+    
+    if args.embedding_data_path:
+        pre_buffer = pickle.load(open(log_path + '/train_data.pkl', 'rb'))
+        pre_test_buffer = pickle.load(open(log_path + '/test_data.pkl', 'rb'))
+        print('load success')
+    else:
+        print('collect start')
+        train_collector = Collector(None, train_envs, pre_buffer)
+        test_collector = Collector(None, test_envs, pre_test_buffer)
+        train_collector.collect(n_step=args.buffer_size,random=True)
+        test_collector.collect(n_step=args.buffer_size // 100, random=True)
+        print(len(train_collector.buffer))
+        print(len(test_collector.buffer))
+        if not os.path.exists(log_path):
+            os.makedirs(log_path)
+        pickle.dump(pre_buffer, open(log_path + '/train_data.pkl', 'wb'))
+        pickle.dump(pre_test_buffer, open(log_path + '/test_data.pkl', 'wb'))
+        print('collect finish')
+
+    
+    
+
+
+    #使用得到的数据训练编码网络
+    # def part_loss(x, device='cpu'):
+    #     if not isinstance(x, torch.Tensor):
+    #         x = torch.tensor(x, device=device, dtype=torch.float32)
+    #     return torch.sum(torch.min(torch.cat(((1-x).pow(2.0),x.pow(2.0)),dim=0), dim=0)[0])
+    
+    pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-5)
+    scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=50, gamma=0.1,last_epoch=-1)
+    train_loss = []
+    loss_fn = torch.nn.NLLLoss()
+    batch_dataloader = DataLoader(BatchDataSet(train_collector.sample(batch_size=0), device=args.device), batch_size=64, shuffle=True)
+    embedding_net.train()
+    for epoch in range(100):
+        for batch_data in batch_dataloader:
+        # batch_data = train_collector.sample(batch_size=64)
+        # print(len(batch_data))
+        # print(batch_data)
+            # print(batch_data['obs'][0].dtype, batch_data['obs_next'][0])
+            pred = embedding_net(batch_data['obs'], batch_data['obs_next'])
+            # x1 = pred[1]
+            # x2 = pred[2]
+            # print(pred)
+            # if not isinstance(batch_data['act'], torch.Tensor):
+            #     act = torch.tensor(batch_data['act'], device=args.device, dtype=torch.int64)
+            act = batch_data['act']
+            # print(pred[0].dtype)
+            # print(act.dtype)
+            # l2_norm = sum(p.pow(2.0).sum() for p in embedding_net.net.parameters())
+            # l2_norm = 0
+            # print(l2_norm)
+            # loss = loss_fn(pred[0], act) + (part_loss(x1) + part_loss(x2)) / 64 + l2_norm
+            # loss = (loss_fn(pred[0], act) - 0.7).abs() + 0.7 + 0.001 * l2_norm
+            loss = loss_fn(pred[0], act)
+            train_loss.append(loss.detach().item())
+            pre_optim.zero_grad()
+            loss.backward()
+            pre_optim.step()
+            scheduler.step()
+
+        print(pre_optim.state_dict()['param_groups'][0]['lr'])  
+        print("Epoch: %d, Loss: %f" % (epoch, float(loss)))
+        correct = 0
+        test_batch_data = test_collector.sample(batch_size=0)
+        embedding_net.eval()
+
+        with torch.no_grad():
+            test_pred = embedding_net(test_batch_data['obs'], test_batch_data['obs_next'])
+            if not isinstance(test_batch_data['act'], torch.Tensor):
+                act = torch.tensor(test_batch_data['act'], device=args.device, dtype=torch.int64)
+            
+            # print(torch.argmax(test_pred[0],dim=1))
+            # print(act)
+            correct += int((torch.argmax(test_pred[0],dim=1) == act).sum())
+            print('Acc:',correct / len(test_batch_data))
+        embedding_net.train()
+
+    torch.save(embedding_net.state_dict(), os.path.join(log_path, 'embedding.pth'))
+    # plt.figure()
+    # x_label = [i for i in range(1, 100001)]
+    # plt.plot(x_label, train_loss)
+    # plt.show()
+    exit()
+    #构建hash表
+
+
+    #log
+    log_path = os.path.join(args.logdir, args.task, 'dqn')
+    writer = SummaryWriter(log_path)
+
     # define model
-    # print(args.state_shape)
-    # print(args.action_shape)
-    # print(args.device)
     # c, h, w = args.state_shape
     net = DQN(*args.state_shape, args.action_shape, args.device).to(device=args.device)
 
@@ -91,77 +205,6 @@ def test_dqn(args=get_args()):
     if args.resume_path:
         policy.load_state_dict(torch.load(args.resume_path))
         print("Loaded agent from: ", args.resume_path)
-    
-    embedding_net = embedding_prediction.Prediction(*args.state_shape, args.action_shape, args.device).to(device=args.device)
-    
-    # numel_list = [p.numel() for p in embedding_net.parameters()]
-    # print(sum(numel_list), numel_list)
-         
-    pre_buffer = ReplayBuffer(args.buffer_size, save_only_last_obs=True, stack_num=args.frames_stack)
-    pre_test_buffer = ReplayBuffer(args.buffer_size // 100, save_only_last_obs=True, stack_num=args.frames_stack)
-    
-    print('collect start')
-    train_collector = Collector(None, train_envs, pre_buffer)
-    test_collector = Collector(None, test_envs, pre_test_buffer)
-    train_collector.collect(n_step=args.buffer_size,random=True)
-    test_collector.collect(n_step=args.buffer_size // 100, random=True)
-    print('collect finish')
-
-    print(len(train_collector.buffer))
-    print(len(test_collector.buffer))
-
-    #使用得到的数据训练编码网络
-    # def part_loss(x, device='cpu'):
-    #     if not isinstance(x, torch.Tensor):
-    #         x = torch.tensor(x, device=device, dtype=torch.float32)
-    #     return torch.sum(torch.min(torch.cat(((1-x).pow(2.0),x.pow(2.0)),dim=0), dim=0)[0])
-    
-    pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-3)
-    scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=20000, gamma=0.1,last_epoch=-1)
-
-    loss_fn = torch.nn.NLLLoss()
-    for epoch in range(1, 100001):
-
-        batch_data = train_collector.sample(batch_size=64)
-        # print(batch_data)
-        pred = embedding_net(batch_data['obs'], batch_data['obs_next'])
-        # x1 = pred[1]
-        # x2 = pred[2]
-        # print(pred)
-        if not isinstance(batch_data['act'], torch.Tensor):
-            act = torch.tensor(batch_data['act'], device=args.device, dtype=torch.int64)
-        # print(pred[0].dtype)
-        # print(act.dtype)
-        # l2_norm = sum(p.pow(2.0).sum() for p in embedding_net.net.parameters())
-        # loss = loss_fn(pred[0], act) + (part_loss(x1) + part_loss(x2)) / 64 + l2_norm
-        loss = loss_fn(pred[0], act)
-        pre_optim.zero_grad()
-        loss.backward()
-        pre_optim.step()
-        scheduler.step()
-
-        if epoch % 10000 == 0 or epoch == 1:
-            print(pre_optim.state_dict()['param_groups'][0]['lr'])  
-            print("Epoch: %d, Loss: %f" % (epoch, float(loss)))
-            correct = 0
-            test_batch_data = test_collector.sample(batch_size=0)
-            with torch.no_grad():
-                test_pred = embedding_net(test_batch_data['obs'], test_batch_data['obs_next'])
-                if not isinstance(test_batch_data['act'], torch.Tensor):
-                    act = torch.tensor(test_batch_data['act'], device=args.device, dtype=torch.int64)
-                
-                # print(torch.argmax(test_pred[0],dim=1))
-                # print(act)
-                correct += int((torch.argmax(test_pred[0],dim=1) == act).sum())
-                print('Acc:',correct / len(test_batch_data))
-    
-    # log
-    log_path = os.path.join(args.logdir, args.task, 'dqn')
-    writer = SummaryWriter(log_path)
-
-    torch.save(embedding_net.state_dict(), os.path.join(log_path, 'embedding.pth'))    
-    exit()
-    #构建hash表
 
 
     # replay buffer: `save_last_obs` and `stack_num` can be removed together

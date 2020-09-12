@@ -72,6 +72,7 @@ class Prediction(nn.Module):
             # nn.ReLU(inplace=True),
             nn.Flatten(),
             nn.Linear(2048, 512),
+            # nn.Dropout(0.5),
             nn.ReLU(inplace=True),
             nn.Linear(512, np.prod(action_shape)),
             nn.LogSoftmax(dim=1)
