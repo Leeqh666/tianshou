@@ -101,10 +101,13 @@ def test_dqn(args=get_args()):
     pre_buffer = ReplayBuffer(args.buffer_size, save_only_last_obs=True, stack_num=args.frames_stack)
     pre_test_buffer = ReplayBuffer(args.buffer_size // 100, save_only_last_obs=True, stack_num=args.frames_stack)
     
-    
+    train_collector = Collector(None, train_envs, pre_buffer)
+    test_collector = Collector(None, test_envs, pre_test_buffer)    
     if args.embedding_data_path:
         pre_buffer = pickle.load(open(log_path + '/train_data.pkl', 'rb'))
         pre_test_buffer = pickle.load(open(log_path + '/test_data.pkl', 'rb'))
+        train_collector.buffer = pre_buffer
+        test_collector.buffer = pre_test_buffer
         print('load success')
     else:
         print('collect start')
@@ -130,7 +133,7 @@ def test_dqn(args=get_args()):
     #         x = torch.tensor(x, device=device, dtype=torch.float32)
     #     return torch.sum(torch.min(torch.cat(((1-x).pow(2.0),x.pow(2.0)),dim=0), dim=0)[0])
     
-    pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-5)
+    pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-3)
     scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=50, gamma=0.1,last_epoch=-1)
     train_loss = []
     loss_fn = torch.nn.NLLLoss()
@@ -161,7 +164,7 @@ def test_dqn(args=get_args()):
             pre_optim.zero_grad()
             loss.backward()
             pre_optim.step()
-            scheduler.step()
+        scheduler.step()
 
         print(pre_optim.state_dict()['param_groups'][0]['lr'])  
         print("Epoch: %d, Loss: %f" % (epoch, float(loss)))
@@ -178,6 +181,7 @@ def test_dqn(args=get_args()):
             # print(act)
             correct += int((torch.argmax(test_pred[0],dim=1) == act).sum())
             print('Acc:',correct / len(test_batch_data))
+            torch.cuda.empty_cache()
         embedding_net.train()
 
     torch.save(embedding_net.state_dict(), os.path.join(log_path, 'embedding.pth'))
