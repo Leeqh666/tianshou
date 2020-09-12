@@ -15,7 +15,8 @@ from tianshou.data import Collector, ReplayBuffer
 
 from atari_wrapper import wrap_deepmind
 import embedding_prediction
-import tqdm
+# import tqdm
+import pickle
 
 
 def get_args():
@@ -76,39 +77,41 @@ def test_dqn(args=get_args()):
     torch.manual_seed(args.seed)
     train_envs.seed(args.seed)
     test_envs.seed(args.seed)
-    # define model
-    # print(args.state_shape)
-    # print(args.action_shape)
-    # print(args.device)
-    # c, h, w = args.state_shape
-    net = DQN(*args.state_shape, args.action_shape, args.device).to(device=args.device)
+    # log
+    log_path = os.path.join(args.logdir, args.task, 'embedding')
 
-    optim = torch.optim.Adam(net.parameters(), lr=args.lr)
-    # define policy
-    policy = DQNPolicy(net, optim, args.gamma, args.n_step,
-                       target_update_freq=args.target_update_freq)
-    # load a previous policy
-    if args.resume_path:
-        policy.load_state_dict(torch.load(args.resume_path))
-        print("Loaded agent from: ", args.resume_path)
-    
     embedding_net = embedding_prediction.Prediction(*args.state_shape, args.action_shape, args.device).to(device=args.device)
     
+    if args.embedding_path:
+        embedding_net.load_state_dict(torch.load(log_path + '/embedding.pth'))
+        print("Loaded agent from: ", log_path + '/embedding.pth')
     # numel_list = [p.numel() for p in embedding_net.parameters()]
     # print(sum(numel_list), numel_list)
          
     pre_buffer = ReplayBuffer(args.buffer_size, save_only_last_obs=True, stack_num=args.frames_stack)
     pre_test_buffer = ReplayBuffer(args.buffer_size // 100, save_only_last_obs=True, stack_num=args.frames_stack)
     
-    print('collect start')
     train_collector = Collector(None, train_envs, pre_buffer)
-    test_collector = Collector(None, test_envs, pre_test_buffer)
-    train_collector.collect(n_step=args.buffer_size,random=True)
-    test_collector.collect(n_step=args.buffer_size // 100, random=True)
-    print('collect finish')
-
-    print(len(train_collector.buffer))
-    print(len(test_collector.buffer))
+    test_collector = Collector(None, test_envs, pre_test_buffer)    
+    if args.embedding_data_path:
+        pre_buffer = pickle.load(open(log_path + '/train_data.pkl', 'rb'))
+        pre_test_buffer = pickle.load(open(log_path + '/test_data.pkl', 'rb'))
+        train_collector.buffer = pre_buffer
+        test_collector.buffer = pre_test_buffer
+        print('load success')
+    else:
+        print('collect start')
+        train_collector = Collector(None, train_envs, pre_buffer)
+        test_collector = Collector(None, test_envs, pre_test_buffer)
+        train_collector.collect(n_step=args.buffer_size,random=True)
+        test_collector.collect(n_step=args.buffer_size // 100, random=True)
+        print(len(train_collector.buffer))
+        print(len(test_collector.buffer))
+        if not os.path.exists(log_path):
+            os.makedirs(log_path)
+        pickle.dump(pre_buffer, open(log_path + '/train_data.pkl', 'wb'))
+        pickle.dump(pre_test_buffer, open(log_path + '/test_data.pkl', 'wb'))
+        print('collect finish')
 
     #使用得到的数据训练编码网络
     # def part_loss(x, device='cpu'):
@@ -163,6 +166,18 @@ def test_dqn(args=get_args()):
     exit()
     #构建hash表
 
+
+    # define model
+    net = DQN(*args.state_shape, args.action_shape, args.device).to(device=args.device)
+
+    optim = torch.optim.Adam(net.parameters(), lr=args.lr)
+    # define policy
+    policy = DQNPolicy(net, optim, args.gamma, args.n_step,
+                       target_update_freq=args.target_update_freq)
+    # load a previous policy
+    if args.resume_path:
+        policy.load_state_dict(torch.load(args.resume_path))
+        print("Loaded agent from: ", args.resume_path)
 
     # replay buffer: `save_last_obs` and `stack_num` can be removed together
     # when you have enough RAM
