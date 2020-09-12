@@ -135,10 +135,11 @@ def test_dqn(args=get_args()):
     
     pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-5)
     scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=320, gamma=0.1,last_epoch=-1)
-    train_loss = []
+    # train_loss = []
     loss_fn = torch.nn.NLLLoss()
     batch_datas = BatchDataSet(train_collector.sample(batch_size=0), device=args.device)
     batch_dataloader = DataLoader(batch_datas, batch_size=64, shuffle=True)
+    test_batch_data = test_collector.sample(batch_size=0)
     embedding_net.train()
     for epoch in range(1, 641):
         # total = 0
@@ -164,7 +165,7 @@ def test_dqn(args=get_args()):
             # loss = loss_fn(pred[0], act) + (part_loss(x1) + part_loss(x2)) / 64 + l2_norm
             # loss = (loss_fn(pred[0], act) - 0.7).abs() + 0.7 + 0.001 * l2_norm
             loss = loss_fn(pred[0], act)
-            train_loss.append(loss.detach().item())
+            # train_loss.append(loss.detach().item())
             pre_optim.zero_grad()
             loss.backward()
             pre_optim.step()
@@ -173,12 +174,10 @@ def test_dqn(args=get_args()):
         if epoch % 64 == 0 or epoch == 1:
 
             print(pre_optim.state_dict()['param_groups'][0]['lr'])  
-            print("Epoch: %d, Loss: %f" % (epoch, (np.array(train_loss)).mean()))
+            print("Epoch: %d, Loss: %f" % (epoch, loss))
             correct = 0
-            test_batch_data = test_collector.sample(batch_size=0)
             embedding_net.eval()
-
-
+            
             with torch.no_grad():
                 test_pred = embedding_net(test_batch_data['obs'], test_batch_data['obs_next'])
                 if not isinstance(test_batch_data['act'], torch.Tensor):
