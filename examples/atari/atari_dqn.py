@@ -137,10 +137,14 @@ def test_dqn(args=get_args()):
     scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=320, gamma=0.1,last_epoch=-1)
     train_loss = []
     loss_fn = torch.nn.NLLLoss()
-    batch_dataloader = DataLoader(BatchDataSet(train_collector.sample(batch_size=0), device=args.device), batch_size=64, shuffle=True)
+    batch_datas = BatchDataSet(train_collector.sample(batch_size=0), device=args.device)
+    batch_dataloader = DataLoader(batch_datas, batch_size=64, shuffle=True)
     embedding_net.train()
     for epoch in range(1, 641):
+        # total = 0
         for batch_data in batch_dataloader:
+            # total += 1
+            # print(total)
         # batch_data = train_collector.sample(batch_size=64)
         # print(len(batch_data))
         # print(batch_data)
