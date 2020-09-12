@@ -17,6 +17,9 @@ from atari_wrapper import wrap_deepmind
 import embedding_prediction
 # import tqdm
 import pickle
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
 
 
 def get_args():
@@ -44,6 +47,8 @@ def get_args():
         default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--frames_stack', type=int, default=4)
     parser.add_argument('--resume_path', type=str, default=None)
+    parser.add_argument('--embedding_path', type=bool, default=False)
+    parser.add_argument('--embedding_data_path', type=bool, default=False)
     parser.add_argument('--watch', default=False, action='store_true',
                         help='watch the play of pre-trained policy only')
     return parser.parse_args()
@@ -123,6 +128,7 @@ def test_dqn(args=get_args()):
     scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=50000, gamma=0.1,last_epoch=-1)
 
     loss_fn = torch.nn.NLLLoss()
+    train_loss = []
     for epoch in range(1, 100001):
 
         batch_data = train_collector.sample(batch_size=64)
@@ -138,6 +144,7 @@ def test_dqn(args=get_args()):
         # l2_norm = sum(p.pow(2.0).sum() for p in embedding_net.net.parameters())
         # loss = loss_fn(pred[0], act) + (part_loss(x1) + part_loss(x2)) / 64 + l2_norm
         loss = loss_fn(pred[0], act)
+        train_loss.append(loss.detach())
         pre_optim.zero_grad()
         loss.backward()
         pre_optim.step()
@@ -158,14 +165,18 @@ def test_dqn(args=get_args()):
                 correct += int((torch.argmax(test_pred[0],dim=1) == act).sum())
                 print('Acc:',correct / len(test_batch_data))
     
-    # log
-    log_path = os.path.join(args.logdir, args.task, 'dqn')
-    writer = SummaryWriter(log_path)
 
-    torch.save(embedding_net.state_dict(), os.path.join(log_path, 'embedding.pth'))    
+    torch.save(embedding_net.state_dict(), os.path.join(log_path, 'embedding.pth'))  
+    plt.figure()
+    plt.plot(np.arange(100000),train_loss)
+    plt.show()  
     exit()
     #构建hash表
 
+
+    # log
+    log_path = os.path.join(args.logdir, args.task, 'dqn')
+    writer = SummaryWriter(log_path)
 
     # define model
     net = DQN(*args.state_shape, args.action_shape, args.device).to(device=args.device)
