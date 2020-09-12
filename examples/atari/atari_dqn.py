@@ -134,12 +134,12 @@ def test_dqn(args=get_args()):
     #     return torch.sum(torch.min(torch.cat(((1-x).pow(2.0),x.pow(2.0)),dim=0), dim=0)[0])
     
     pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-5)
-    scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=50, gamma=0.1,last_epoch=-1)
+    scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=320, gamma=0.1,last_epoch=-1)
     train_loss = []
     loss_fn = torch.nn.NLLLoss()
     batch_dataloader = DataLoader(BatchDataSet(train_collector.sample(batch_size=0), device=args.device), batch_size=64, shuffle=True)
     embedding_net.train()
-    for epoch in range(100):
+    for epoch in range(1, 641):
         for batch_data in batch_dataloader:
         # batch_data = train_collector.sample(batch_size=64)
         # print(len(batch_data))
@@ -166,23 +166,26 @@ def test_dqn(args=get_args()):
             pre_optim.step()
         scheduler.step()
 
-        print(pre_optim.state_dict()['param_groups'][0]['lr'])  
-        print("Epoch: %d, Loss: %f" % (epoch, float(loss)))
-        correct = 0
-        test_batch_data = test_collector.sample(batch_size=0)
-        embedding_net.eval()
+        if epoch % 64 == 0 or epoch == 1:
 
-        with torch.no_grad():
-            test_pred = embedding_net(test_batch_data['obs'], test_batch_data['obs_next'])
-            if not isinstance(test_batch_data['act'], torch.Tensor):
-                act = torch.tensor(test_batch_data['act'], device=args.device, dtype=torch.int64)
-            
-            # print(torch.argmax(test_pred[0],dim=1))
-            # print(act)
-            correct += int((torch.argmax(test_pred[0],dim=1) == act).sum())
-            print('Acc:',correct / len(test_batch_data))
-            torch.cuda.empty_cache()
-        embedding_net.train()
+            print(pre_optim.state_dict()['param_groups'][0]['lr'])  
+            print("Epoch: %d, Loss: %f" % (epoch, (np.array(train_loss)).mean()))
+            correct = 0
+            test_batch_data = test_collector.sample(batch_size=0)
+            embedding_net.eval()
+
+
+            with torch.no_grad():
+                test_pred = embedding_net(test_batch_data['obs'], test_batch_data['obs_next'])
+                if not isinstance(test_batch_data['act'], torch.Tensor):
+                    act = torch.tensor(test_batch_data['act'], device=args.device, dtype=torch.int64)
+                
+                # print(torch.argmax(test_pred[0],dim=1))
+                # print(act)
+                correct += int((torch.argmax(test_pred[0],dim=1) == act).sum())
+                print('Acc:',correct / len(test_batch_data))
+                torch.cuda.empty_cache()
+            embedding_net.train()
 
     torch.save(embedding_net.state_dict(), os.path.join(log_path, 'embedding.pth'))
     # plt.figure()
