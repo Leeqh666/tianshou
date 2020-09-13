@@ -135,7 +135,7 @@ def test_dqn(args=get_args()):
         temp = torch.cat(((1-x).pow(2.0).unsqueeze_(0),x.pow(2.0).unsqueeze_(0)),dim=0)
         temp_2 = torch.min(temp, dim=0)[0]
         return torch.sum(temp_2)
-    
+
     pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-4)
     scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=320, gamma=0.1,last_epoch=-1)
     train_loss = []
@@ -154,6 +154,7 @@ def test_dqn(args=get_args()):
         # print(len(batch_data))
         # print(batch_data)
             # print(batch_data['obs'][0].dtype, batch_data['obs_next'][0])
+            # print(torch.sum(batch_data['obs'][0] == batch_data['obs'][1]))
             pred_act, x1, x2, _ = embedding_net(batch_data['obs'], batch_data['obs_next'])
             # print(x1.shape)
             # print(x1[0])
@@ -167,8 +168,8 @@ def test_dqn(args=get_args()):
             # l2_norm = 0
             # print(l2_norm)
             # print(torch.argmax(pred_act, dim=1))
-            print(pred_act)
-            print(act)
+            # print(pred_act)
+            # print(act)
             loss_1 = loss_fn(pred_act, act)
             loss_2 = 0.01 * (part_loss(x1, args.device) + part_loss(x2, args.device)) / 64
             print(loss_1)
