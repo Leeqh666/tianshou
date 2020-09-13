@@ -119,10 +119,10 @@ def test_dqn(args=get_args()):
         print('collect finish')
 
     #使用得到的数据训练编码网络
-    # def part_loss(x, device='cpu'):
-    #     if not isinstance(x, torch.Tensor):
-    #         x = torch.tensor(x, device=device, dtype=torch.float32)
-    #     return torch.sum(torch.min(torch.cat(((1-x).pow(2.0),x.pow(2.0)),dim=0), dim=0)[0])
+    def part_loss(x, device='cpu'):
+        if not isinstance(x, torch.Tensor):
+            x = torch.tensor(x, device=device, dtype=torch.float32)
+        return torch.sum(torch.min(torch.cat(((1-x).pow(2.0),x.pow(2.0)),dim=0), dim=0)[0])
     
     pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-5)
     scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=50000, gamma=0.1,last_epoch=-1)
@@ -143,7 +143,7 @@ def test_dqn(args=get_args()):
         # print(pred[0].dtype)
         # print(act.dtype)
         # l2_norm = sum(p.pow(2.0).sum() for p in embedding_net.net.parameters())
-        # loss = loss_fn(pred[0], act) + (part_loss(x1) + part_loss(x2)) / 64 + l2_norm
+        # loss = loss_fn(pred[0], act) + 0.001 * (part_loss(x1) + part_loss(x2)) / 64
         loss = loss_fn(pred[0], act)
         train_loss.append(loss.detach().item())
         pre_optim.zero_grad()
