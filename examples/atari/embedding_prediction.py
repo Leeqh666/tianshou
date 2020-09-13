@@ -38,18 +38,18 @@ class Embedding(nn.Module):
         # )
         self.net = nn.Sequential(
                         nn.Conv2d(c,64,kernel_size=3,padding=0),
-                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        # nn.BatchNorm2d(64, momentum=1, affine=True),
                         nn.ReLU(),
                         nn.MaxPool2d(2),
                         nn.Conv2d(64,64,kernel_size=3, stride=2, padding=0),
-                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        # nn.BatchNorm2d(64, momentum=1, affine=True),
                         nn.ReLU(),
                         nn.Conv2d(64,64,kernel_size=3,padding=0),
-                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        # nn.BatchNorm2d(64, momentum=1, affine=True),
                         nn.ReLU(),
                         nn.MaxPool2d(2),
                         nn.Conv2d(64,64,kernel_size=3,stride=2,padding=0),
-                        nn.BatchNorm2d(64, momentum=1, affine=True),
+                        # nn.BatchNorm2d(64, momentum=1, affine=True),
                         nn.Sigmoid()
                         )
 
@@ -65,13 +65,13 @@ class Prediction(nn.Module):
         super(Prediction, self).__init__()
         self.device = device
 
-        self.embed_net =Embedding(c, h, w, device)
+        self.embed_net = Embedding(c, h, w, device)
 
         self.net = nn.Sequential(
-            # nn.Conv2d(128, 64, kernel_size=1),
-            # nn.ReLU(inplace=True),
+            nn.Conv2d(128, 64, kernel_size=1),
+            nn.ReLU(inplace=True),
             nn.Flatten(),
-            nn.Linear(2048, 512),
+            nn.Linear(1024, 512),
             # nn.Dropout(0.5),
             nn.ReLU(inplace=True),
             nn.Linear(512, np.prod(action_shape)),

@@ -95,8 +95,8 @@ def test_dqn(args=get_args()):
     if args.embedding_path:
         embedding_net.load_state_dict(torch.load(log_path + '/embedding.pth'))
         print("Loaded agent from: ", log_path + '/embedding.pth')
-    # numel_list = [p.numel() for p in embedding_net.parameters()]
-    # print(sum(numel_list), numel_list)
+    numel_list = [p.numel() for p in embedding_net.parameters()]
+    print(sum(numel_list), numel_list)
          
     pre_buffer = ReplayBuffer(args.buffer_size, save_only_last_obs=True, stack_num=args.frames_stack)
     pre_test_buffer = ReplayBuffer(args.buffer_size // 100, save_only_last_obs=True, stack_num=args.frames_stack)
@@ -128,14 +128,18 @@ def test_dqn(args=get_args()):
 
 
     #使用得到的数据训练编码网络
-    # def part_loss(x, device='cpu'):
-    #     if not isinstance(x, torch.Tensor):
-    #         x = torch.tensor(x, device=device, dtype=torch.float32)
-    #     return torch.sum(torch.min(torch.cat(((1-x).pow(2.0),x.pow(2.0)),dim=0), dim=0)[0])
+    def part_loss(x, device='cpu'):
+        if not isinstance(x, torch.Tensor):
+            x = torch.tensor(x, device=device, dtype=torch.float32)
+        x = x.view(64, -1)
+        temp = torch.cat(((1-x).pow(2.0).unsqueeze_(0),x.pow(2.0).unsqueeze_(0)),dim=0)
+        temp_2 = torch.min(temp, dim=0)[0]
+        return torch.sum(temp_2)
     
     pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-4)
     scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=320, gamma=0.1,last_epoch=-1)
-    # train_loss = []
+    train_loss = []
+    loss_plot = []
     loss_fn = torch.nn.NLLLoss()
     batch_datas = BatchDataSet(train_collector.sample(batch_size=0), device=args.device)
     batch_dataloader = DataLoader(batch_datas, batch_size=64, shuffle=True)
@@ -150,9 +154,9 @@ def test_dqn(args=get_args()):
         # print(len(batch_data))
         # print(batch_data)
             # print(batch_data['obs'][0].dtype, batch_data['obs_next'][0])
-            pred = embedding_net(batch_data['obs'], batch_data['obs_next'])
-            # x1 = pred[1]
-            # x2 = pred[2]
+            pred_act, x1, x2, _ = embedding_net(batch_data['obs'], batch_data['obs_next'])
+            # print(x1.shape)
+            # print(x1[0])
             # print(pred)
             # if not isinstance(batch_data['act'], torch.Tensor):
             #     act = torch.tensor(batch_data['act'], device=args.device, dtype=torch.int64)
@@ -162,19 +166,27 @@ def test_dqn(args=get_args()):
             # l2_norm = sum(p.pow(2.0).sum() for p in embedding_net.net.parameters())
             # l2_norm = 0
             # print(l2_norm)
-            # loss = loss_fn(pred[0], act) + (part_loss(x1) + part_loss(x2)) / 64 + l2_norm
+            # print(torch.argmax(pred_act, dim=1))
+            print(pred_act)
+            print(act)
+            loss_1 = loss_fn(pred_act, act)
+            loss_2 = 0.01 * (part_loss(x1, args.device) + part_loss(x2, args.device)) / 64
+            print(loss_1)
+            print(loss_2)
+            loss = loss_1 + loss_2
+            print(loss)
             # loss = (loss_fn(pred[0], act) - 0.7).abs() + 0.7 + 0.001 * l2_norm
-            loss = loss_fn(pred[0], act)
-            # train_loss.append(loss.detach().item())
+            # loss = loss_fn(pred[0], act)
+            train_loss.append(loss.detach().item())
             pre_optim.zero_grad()
             loss.backward()
             pre_optim.step()
+            # exit()
         scheduler.step()
-
         if epoch % 64 == 0 or epoch == 1:
 
             print(pre_optim.state_dict()['param_groups'][0]['lr'])  
-            print("Epoch: %d, Loss: %f" % (epoch, loss))
+            print("Epoch: %d, Loss: %f" % (epoch, (np.array(train_loss)).mean()))
             correct = 0
             embedding_net.eval()
             
@@ -189,12 +201,15 @@ def test_dqn(args=get_args()):
                 print('Acc:',correct / len(test_batch_data))
                 torch.cuda.empty_cache()
             embedding_net.train()
+        
+        loss_plot.append((np.array(train_loss)).mean())
+        train_loss = []
 
     torch.save(embedding_net.state_dict(), os.path.join(log_path, 'embedding.pth'))
-    # plt.figure()
-    # x_label = [i for i in range(1, 100001)]
-    # plt.plot(x_label, train_loss)
-    # plt.show()
+    plt.figure()
+    x_label = [i for i in range(1, 641)]
+    plt.plot(x_label, loss_plot)
+    plt.show()
     exit()
     #构建hash表
 
