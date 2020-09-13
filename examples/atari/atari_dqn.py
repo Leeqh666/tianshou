@@ -122,7 +122,7 @@ def test_dqn(args=get_args()):
     def part_loss(x, device='cpu'):
         if not isinstance(x, torch.Tensor):
             x = torch.tensor(x, device=device, dtype=torch.float32)
-        return torch.sum(torch.min(torch.cat(((1-x).pow(2.0),x.pow(2.0)),dim=0), dim=0)[0])
+        return torch.sum(torch.min(torch.cat(((1-x).pow(2.0).unsqueeze_(0),x.pow(2.0).unsqueeze_(0)),dim=0), dim=0)[0])
     
     pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-5)
     scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=50000, gamma=0.1,last_epoch=-1)
@@ -134,17 +134,22 @@ def test_dqn(args=get_args()):
 
         batch_data = train_collector.sample(batch_size=64)
         # print(batch_data)
+        # print(batch_data['obs'][0] == batch_data['obs'][1])
         pred = embedding_net(batch_data['obs'], batch_data['obs_next'])
-        # x1 = pred[1]
-        # x2 = pred[2]
-        # print(pred)
+        x1 = pred[1]
+        x2 = pred[2]
+        print(torch.argmax(pred[0], dim=1))
         if not isinstance(batch_data['act'], torch.Tensor):
             act = torch.tensor(batch_data['act'], device=args.device, dtype=torch.int64)
         # print(pred[0].dtype)
         # print(act.dtype)
         # l2_norm = sum(p.pow(2.0).sum() for p in embedding_net.net.parameters())
         # loss = loss_fn(pred[0], act) + 0.001 * (part_loss(x1) + part_loss(x2)) / 64
-        loss = loss_fn(pred[0], act)
+        loss_1 = loss_fn(pred[0], act)
+        loss_2 = 0.01 * (part_loss(x1) + part_loss(x2)) / 64
+        loss = loss_1 + loss_2
+        print(loss_1)
+        print(loss_2)
         train_loss.append(loss.detach().item())
         pre_optim.zero_grad()
         loss.backward()
