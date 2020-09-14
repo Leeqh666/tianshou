@@ -136,7 +136,7 @@ def test_dqn(args=get_args()):
         temp_2 = torch.min(temp, dim=0)[0]
         return torch.sum(temp_2)
 
-    pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-2)
+    pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-5)
     scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=320, gamma=0.1,last_epoch=-1)
     train_loss = []
     loss_plot = []
