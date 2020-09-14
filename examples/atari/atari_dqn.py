@@ -122,7 +122,7 @@ def test_dqn(args=get_args()):
     def part_loss(x, device='cpu'):
         if not isinstance(x, torch.Tensor):
             x = torch.tensor(x, device=device, dtype=torch.float32)
-        x = x.view(64, -1)
+        x = x.view(128, -1)
         temp = torch.cat(((1-x).pow(2.0).unsqueeze_(0),x.pow(2.0).unsqueeze_(0)),dim=0)
         temp_2 = torch.min(temp, dim=0)[0]
         return torch.sum(temp_2)
@@ -134,8 +134,8 @@ def test_dqn(args=get_args()):
     loss_fn = torch.nn.NLLLoss()
     train_loss = []
     for epoch in range(1, 100001):
-
-        batch_data = train_collector.sample(batch_size=64)
+        embedding_net.train()
+        batch_data = train_collector.sample(batch_size=128)
         # print(batch_data)
         # print(batch_data['obs'][0] == batch_data['obs'][1])
         pred = embedding_net(batch_data['obs'], batch_data['obs_next'])
@@ -149,7 +149,7 @@ def test_dqn(args=get_args()):
         # l2_norm = sum(p.pow(2.0).sum() for p in embedding_net.net.parameters())
         # loss = loss_fn(pred[0], act) + 0.001 * (part_loss(x1) + part_loss(x2)) / 64
         loss_1 = loss_fn(pred[0], act)
-        loss_2 = 0.01 * (part_loss(x1, args.device) + part_loss(x2, args.device)) / 64
+        loss_2 = 0.01 * (part_loss(x1, args.device) + part_loss(x2, args.device)) / 128
         loss = loss_1 + loss_2
         # print(loss_1)
         # print(loss_2)
@@ -165,7 +165,7 @@ def test_dqn(args=get_args()):
             correct = 0
             numel_list = [p for p in embedding_net.parameters()][-2]
             print(numel_list)
-
+            embedding_net.eval()
             with torch.no_grad():
                 test_pred = embedding_net(test_batch_data['obs'], test_batch_data['obs_next'])
                 if not isinstance(test_batch_data['act'], torch.Tensor):
