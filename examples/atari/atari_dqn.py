@@ -198,15 +198,21 @@ def test_dqn(args=get_args()):
             correct = 0
             embedding_net.eval()
             with torch.no_grad():
-                test_pred = embedding_net(test_batch_data['obs'], test_batch_data['obs_next'])
+                test_pred, x1, x2, _ = embedding_net(test_batch_data['obs'], test_batch_data['obs_next'])
                 if not isinstance(test_batch_data['act'], torch.Tensor):
                     act = torch.tensor(test_batch_data['act'], device=args.device, dtype=torch.int64)
                 
+                loss_1 = loss_fn(test_pred, act)
+                loss_2 = 0.01 * (part_loss(x1, args.device) + part_loss(x2, args.device)) / 128
+                # print(loss_1)
+                # print(loss_2)
+                loss = loss_1 + loss_2
+                # print(loss)
                 numel_list = [p for p in embedding_net.parameters()][-2]
                 print(numel_list)
-                print(torch.argmax(test_pred[0],dim=1))
+                print(torch.argmax(test_pred,dim=1))
                 print(act)
-                correct += int((torch.argmax(test_pred[0],dim=1) == act).sum())
+                correct += int((torch.argmax(test_pred,dim=1) == act).sum())
                 print('Acc:',correct / len(test_batch_data))
                 torch.cuda.empty_cache()
         
