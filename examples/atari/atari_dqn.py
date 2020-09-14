@@ -174,14 +174,14 @@ def test_dqn(args=get_args()):
             # l2_norm = 0
             # print(l2_norm)
             # print(torch.argmax(pred_act, dim=1))
-            print(torch.argmax(pred_act, dim=1))
+
             # print(act)
             loss_1 = loss_fn(pred_act, act)
             loss_2 = 0.01 * (part_loss(x1, args.device) + part_loss(x2, args.device)) / 64
-            print(loss_1)
-            print(loss_2)
+            # print(loss_1)
+            # print(loss_2)
             loss = loss_1 + loss_2
-            print(loss)
+            # print(loss)
             # loss = (loss_fn(pred[0], act) - 0.7).abs() + 0.7 + 0.001 * l2_norm
             # loss = loss_fn(pred[0], act)
             train_loss.append(loss.detach().item())
@@ -203,8 +203,8 @@ def test_dqn(args=get_args()):
                 
                 numel_list = [p for p in embedding_net.parameters()][-2]
                 print(numel_list)
-                # print(torch.argmax(test_pred[0],dim=1))
-                # print(act)
+                print(torch.argmax(test_pred[0],dim=1))
+                print(act)
                 correct += int((torch.argmax(test_pred[0],dim=1) == act).sum())
                 print('Acc:',correct / len(test_batch_data))
                 torch.cuda.empty_cache()
