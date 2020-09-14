@@ -144,7 +144,7 @@ def test_dqn(args=get_args()):
     batch_datas = BatchDataSet(train_collector.sample(batch_size=0), device=args.device)
     batch_dataloader = DataLoader(batch_datas, batch_size=64, shuffle=True)
     test_batch_data = test_collector.sample(batch_size=0)
-    embedding_net.train()
+
     for epoch in range(1, 641):
         # total = 0
         for batch_data in batch_dataloader:
@@ -174,11 +174,9 @@ def test_dqn(args=get_args()):
             # l2_norm = 0
             # print(l2_norm)
             # print(torch.argmax(pred_act, dim=1))
-            numel_list = [p for p in embedding_net.parameters()][-2]
-            print(numel_list)
             print(torch.argmax(pred_act, dim=1))
             # print(act)
-            loss_1 = 10 * loss_fn(pred_act, act)
+            loss_1 = loss_fn(pred_act, act)
             loss_2 = 0.01 * (part_loss(x1, args.device) + part_loss(x2, args.device)) / 64
             print(loss_1)
             print(loss_2)
@@ -197,19 +195,19 @@ def test_dqn(args=get_args()):
             print(pre_optim.state_dict()['param_groups'][0]['lr'])  
             print("Epoch: %d, Loss: %f" % (epoch, (np.array(train_loss)).mean()))
             correct = 0
-            embedding_net.eval()
             
             with torch.no_grad():
                 test_pred = embedding_net(test_batch_data['obs'], test_batch_data['obs_next'])
                 if not isinstance(test_batch_data['act'], torch.Tensor):
                     act = torch.tensor(test_batch_data['act'], device=args.device, dtype=torch.int64)
                 
+                numel_list = [p for p in embedding_net.parameters()][-2]
+                print(numel_list)
                 # print(torch.argmax(test_pred[0],dim=1))
                 # print(act)
                 correct += int((torch.argmax(test_pred[0],dim=1) == act).sum())
                 print('Acc:',correct / len(test_batch_data))
                 torch.cuda.empty_cache()
-            embedding_net.train()
         
         loss_plot.append((np.array(train_loss)).mean())
         train_loss = []
