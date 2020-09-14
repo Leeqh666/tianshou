@@ -151,8 +151,8 @@ def test_dqn(args=get_args()):
         loss_1 = loss_fn(pred[0], act)
         loss_2 = 0.01 * (part_loss(x1, args.device) + part_loss(x2, args.device)) / 64
         loss = loss_1 + loss_2
-        print(loss_1)
-        print(loss_2)
+        # print(loss_1)
+        # print(loss_2)
         train_loss.append(loss.detach().item())
         pre_optim.zero_grad()
         loss.backward()
