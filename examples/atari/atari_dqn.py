@@ -145,6 +145,8 @@ def test_dqn(args=get_args()):
         # print(act.dtype)
         # l2_norm = sum(p.pow(2.0).sum() for p in embedding_net.net.parameters())
         # loss = loss_fn(pred[0], act) + 0.001 * (part_loss(x1) + part_loss(x2)) / 64
+        numel_list = [p for p in embedding_net.parameters()][-2]
+        print(numel_list)
         loss_1 = loss_fn(pred[0], act)
         loss_2 = 0.01 * (part_loss(x1, args.device) + part_loss(x2, args.device)) / 64
         loss = loss_1 + loss_2
