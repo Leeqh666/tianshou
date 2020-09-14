@@ -178,7 +178,7 @@ def test_dqn(args=get_args()):
             print(numel_list)
             print(torch.argmax(pred_act, dim=1))
             # print(act)
-            loss_1 = loss_fn(pred_act, act)
+            loss_1 = 10 * loss_fn(pred_act, act)
             loss_2 = 0.01 * (part_loss(x1, args.device) + part_loss(x2, args.device)) / 64
             print(loss_1)
             print(loss_2)
