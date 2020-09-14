@@ -122,7 +122,10 @@ def test_dqn(args=get_args()):
     def part_loss(x, device='cpu'):
         if not isinstance(x, torch.Tensor):
             x = torch.tensor(x, device=device, dtype=torch.float32)
-        return torch.sum(torch.min(torch.cat(((1-x).pow(2.0).unsqueeze_(0),x.pow(2.0).unsqueeze_(0)),dim=0), dim=0)[0])
+        x = x.view(64, -1)
+        temp = torch.cat(((1-x).pow(2.0).unsqueeze_(0),x.pow(2.0).unsqueeze_(0)),dim=0)
+        temp_2 = torch.min(temp, dim=0)[0]
+        return torch.sum(temp_2)
     
     pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-5)
     scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=50000, gamma=0.1,last_epoch=-1)
