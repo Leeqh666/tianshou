@@ -138,15 +138,13 @@ def test_dqn(args=get_args()):
         pred = embedding_net(batch_data['obs'], batch_data['obs_next'])
         x1 = pred[1]
         x2 = pred[2]
-        print(torch.argmax(pred[0], dim=1))
+        # print(torch.argmax(pred[0], dim=1))
         if not isinstance(batch_data['act'], torch.Tensor):
             act = torch.tensor(batch_data['act'], device=args.device, dtype=torch.int64)
         # print(pred[0].dtype)
         # print(act.dtype)
         # l2_norm = sum(p.pow(2.0).sum() for p in embedding_net.net.parameters())
         # loss = loss_fn(pred[0], act) + 0.001 * (part_loss(x1) + part_loss(x2)) / 64
-        numel_list = [p for p in embedding_net.parameters()][-2]
-        print(numel_list)
         loss_1 = loss_fn(pred[0], act)
         loss_2 = 0.01 * (part_loss(x1, args.device) + part_loss(x2, args.device)) / 64
         loss = loss_1 + loss_2
@@ -162,14 +160,16 @@ def test_dqn(args=get_args()):
             print(pre_optim.state_dict()['param_groups'][0]['lr'])  
             print("Epoch: %d, Loss: %f" % (epoch, float(loss)))
             correct = 0
+            numel_list = [p for p in embedding_net.parameters()][-2]
+            print(numel_list)
 
             with torch.no_grad():
                 test_pred = embedding_net(test_batch_data['obs'], test_batch_data['obs_next'])
                 if not isinstance(test_batch_data['act'], torch.Tensor):
                     act = torch.tensor(test_batch_data['act'], device=args.device, dtype=torch.int64)
                 
-                # print(torch.argmax(test_pred[0],dim=1))
-                # print(act)
+                print(torch.argmax(test_pred[0],dim=1))
+                print(act)
                 correct += int((torch.argmax(test_pred[0],dim=1) == act).sum())
                 print('Acc:',correct / len(test_batch_data))
     
