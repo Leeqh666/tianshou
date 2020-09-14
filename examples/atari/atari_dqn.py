@@ -136,7 +136,7 @@ def test_dqn(args=get_args()):
         temp_2 = torch.min(temp, dim=0)[0]
         return torch.sum(temp_2)
 
-    pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-4)
+    pre_optim = torch.optim.Adam(embedding_net.parameters(), lr=1e-2)
     scheduler = torch.optim.lr_scheduler.StepLR(pre_optim, step_size=320, gamma=0.1,last_epoch=-1)
     train_loss = []
     loss_plot = []
@@ -156,19 +156,27 @@ def test_dqn(args=get_args()):
             # print(batch_data['obs'][0].dtype, batch_data['obs_next'][0])
             # print(torch.sum(batch_data['obs'][0] == batch_data['obs'][1]))
             pred_act, x1, x2, _ = embedding_net(batch_data['obs'], batch_data['obs_next'])
+            # print(embedding_net.net.parameters())
             # print(x1.shape)
             # print(x1[0])
             # print(pred)
             # if not isinstance(batch_data['act'], torch.Tensor):
             #     act = torch.tensor(batch_data['act'], device=args.device, dtype=torch.int64)
+            # print(torch.sum(batch_data['obs'][0] == batch_data['obs_next'][0]))
+            # print(torch.sum(batch_data['obs'][0] == batch_data['obs'][1]))
+            # print(x1[0])
+            # print(x1[1])
             act = batch_data['act']
+            # print(act)
             # print(pred[0].dtype)
             # print(act.dtype)
             # l2_norm = sum(p.pow(2.0).sum() for p in embedding_net.net.parameters())
             # l2_norm = 0
             # print(l2_norm)
             # print(torch.argmax(pred_act, dim=1))
-            # print(pred_act)
+            numel_list = [p for p in embedding_net.parameters()][-2]
+            print(numel_list)
+            print(torch.argmax(pred_act, dim=1))
             # print(act)
             loss_1 = loss_fn(pred_act, act)
             loss_2 = 0.01 * (part_loss(x1, args.device) + part_loss(x2, args.device)) / 64
@@ -182,7 +190,7 @@ def test_dqn(args=get_args()):
             pre_optim.zero_grad()
             loss.backward()
             pre_optim.step()
-            # exit()
+
         scheduler.step()
         if epoch % 64 == 0 or epoch == 1:
 
