@@ -38,18 +38,18 @@ class Embedding(nn.Module):
         # )
         self.net = nn.Sequential(
                         nn.Conv2d(c,64,kernel_size=3,padding=0),
-                        # nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.BatchNorm2d(64, momentum=1, affine=True),
                         nn.ReLU(),
                         nn.MaxPool2d(2),
                         nn.Conv2d(64,64,kernel_size=3, stride=2, padding=0),
-                        # nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.BatchNorm2d(64, momentum=1, affine=True),
                         nn.ReLU(),
                         nn.Conv2d(64,64,kernel_size=3,padding=0),
-                        # nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.BatchNorm2d(64, momentum=1, affine=True),
                         nn.ReLU(),
                         nn.MaxPool2d(2),
                         nn.Conv2d(64,64,kernel_size=3,stride=2,padding=0),
-                        # nn.BatchNorm2d(64, momentum=1, affine=True),
+                        nn.BatchNorm2d(64, momentum=1, affine=True),
                         nn.Sigmoid()
                         )
 
