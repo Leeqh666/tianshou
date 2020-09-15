@@ -101,3 +101,13 @@ class Prediction(nn.Module):
         # print(x.size())
         # print(type(x))     
         return self.net(x), x1[0], x2[0], state
+
+def weights_init(m):
+
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.kaiming_normal(m.weight, a=0.2, mode='fan_in', nonlinearity='leaky_relu')
+        nn.init.constant_(m.bias.data, 0) 
+    elif classname.find('Linear') != -1:
+        nn.init.kaiming_normal(m.weight, a=0.2, mode='fan_in', nonlinearity='leaky_relu')
+

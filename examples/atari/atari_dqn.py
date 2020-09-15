@@ -84,9 +84,10 @@ def test_dqn(args=get_args()):
     test_envs.seed(args.seed)
     # log
     log_path = os.path.join(args.logdir, args.task, 'embedding')
-    embedding_writer = SummaryWriter(log_path + '/without_dropout')
+    embedding_writer = SummaryWriter(log_path + '/with_init')
 
     embedding_net = embedding_prediction.Prediction(*args.state_shape, args.action_shape, args.device).to(device=args.device)
+    embedding_net.apply(embedding_prediction.weights_init)
 
     if args.embedding_path:
         embedding_net.load_state_dict(torch.load(log_path + '/embedding.pth'))
