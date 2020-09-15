@@ -39,14 +39,14 @@ class Embedding(nn.Module):
         self.net = nn.Sequential(
                         nn.Conv2d(c,64,kernel_size=3,padding=0),
                         nn.BatchNorm2d(64, momentum=0.1, affine=True),
-                        nn.ReLU(inplace=True),
+                        nn.LeakyReLU(0.2, inplace=True),
                         nn.MaxPool2d(2),
                         nn.Conv2d(64,64,kernel_size=3, stride=2, padding=0),
                         nn.BatchNorm2d(64, momentum=0.1, affine=True),
-                        nn.ReLU(inplace=True),
+                        nn.LeakyReLU(0.2, inplace=True),
                         nn.Conv2d(64,64,kernel_size=3,padding=0),
                         nn.BatchNorm2d(64, momentum=0.1, affine=True),
-                        nn.ReLU(inplace=True),
+                        nn.LeakyReLU(0.2, inplace=True),
                         nn.MaxPool2d(2),
                         nn.Conv2d(64,64,kernel_size=3,stride=2,padding=0),
                         nn.BatchNorm2d(64, momentum=0.1, affine=True),
@@ -72,7 +72,8 @@ class Prediction(nn.Module):
             # nn.ReLU(inplace=True),
             nn.Flatten(),
             nn.Linear(2048, 512),
-            nn.ReLU(inplace=True),
+            # nn.Dropout(0.5),
+            nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(512, np.prod(action_shape)),
             nn.LogSoftmax(dim=1)
         )

@@ -17,9 +17,9 @@ from atari_wrapper import wrap_deepmind
 import embedding_prediction
 # import tqdm
 import pickle
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
+# import matplotlib
+# matplotlib.use('TkAgg')
+# import matplotlib.pyplot as plt
 
 
 def get_args():
@@ -84,9 +84,10 @@ def test_dqn(args=get_args()):
     test_envs.seed(args.seed)
     # log
     log_path = os.path.join(args.logdir, args.task, 'embedding')
+    embedding_writer = SummaryWriter(log_path + '/without_dropout')
 
     embedding_net = embedding_prediction.Prediction(*args.state_shape, args.action_shape, args.device).to(device=args.device)
-    
+
     if args.embedding_path:
         embedding_net.load_state_dict(torch.load(log_path + '/embedding.pth'))
         print("Loaded agent from: ", log_path + '/embedding.pth')
@@ -132,7 +133,7 @@ def test_dqn(args=get_args()):
     test_batch_data = test_collector.sample(batch_size=0)
 
     loss_fn = torch.nn.NLLLoss()
-    train_loss = []
+    # train_loss = []
     for epoch in range(1, 100001):
         embedding_net.train()
         batch_data = train_collector.sample(batch_size=128)
@@ -153,7 +154,10 @@ def test_dqn(args=get_args()):
         loss = loss_1 + loss_2
         # print(loss_1)
         # print(loss_2)
-        train_loss.append(loss.detach().item())
+        embedding_writer.add_scalar('training loss1', loss_1.item(), epoch)
+        embedding_writer.add_scalar('training loss2', loss_2, epoch)
+        embedding_writer.add_scalar('training loss', loss.item(), epoch)
+        # train_loss.append(loss.detach().item())
         pre_optim.zero_grad()
         loss.backward()
         pre_optim.step()
@@ -161,7 +165,7 @@ def test_dqn(args=get_args()):
 
         if epoch % 10000 == 0 or epoch == 1:
             print(pre_optim.state_dict()['param_groups'][0]['lr'])  
-            print("Epoch: %d,Train: Loss: %f" % (epoch, float(loss)))
+            # print("Epoch: %d,Train: Loss: %f" % (epoch, float(loss.item())))
             correct = 0
             numel_list = [p for p in embedding_net.parameters()][-2]
             print(numel_list)
@@ -172,18 +176,20 @@ def test_dqn(args=get_args()):
                     act = torch.tensor(test_batch_data['act'], device=args.device, dtype=torch.int64)
                 loss_1 = loss_fn(test_pred, act)
                 loss_2 = 0.01 * (part_loss(x1, args.device) + part_loss(x2, args.device)) / 128
-                loss = loss_1 + loss_2         
-                print("Test Loss: %f" % (float(loss)))                   
+                loss = loss_1 + loss_2  
+                embedding_writer.add_scalar('test loss', loss.item(), epoch)       
+                # print("Test Loss: %f" % (float(loss)))                   
                 print(torch.argmax(test_pred,dim=1))
                 print(act)
                 correct += int((torch.argmax(test_pred,dim=1) == act).sum())
                 print('Acc:',correct / len(test_batch_data))
     
 
-    torch.save(embedding_net.state_dict(), os.path.join(log_path, 'embedding.pth'))  
-    plt.figure()
-    plt.plot(np.arange(100000),train_loss)
-    plt.show()  
+    torch.save(embedding_net.state_dict(), os.path.join(log_path, 'embedding.pth'))
+    embedding_writer.close()  
+    # plt.figure()
+    # plt.plot(np.arange(100000),train_loss)
+    # plt.show()
     exit()
     #构建hash表
 
